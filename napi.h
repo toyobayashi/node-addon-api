@@ -20,6 +20,11 @@
 #include <string>
 #include <vector>
 
+#if __cplusplus >= 202002L
+#include <coroutine>
+#include <variant>
+#endif
+
 // VS2015 RTM has bugs with constexpr, so require min of VS2015 Update 3 (known
 // good version)
 #if !defined(_MSC_VER) || _MSC_FULL_VER >= 190024210
@@ -78,6 +83,15 @@ static_assert(sizeof(char16_t) == sizeof(wchar_t),
 #define NAPI_THROW_IF_FAILED_VOID(env, status)                                 \
   if ((status) != napi_ok) throw Napi::Error::New(env);
 
+#define NAPI_CO_THROW(e, ...) throw e
+#define NAPI_CO_THROW_VOID(e) throw e
+
+#define NAPI_CO_THROW_IF_FAILED(env, status, ...)                              \
+  if ((status) != napi_ok) throw Napi::Error::New(env);
+
+#define NAPI_CO_THROW_IF_FAILED_VOID(env, status)                              \
+  if ((status) != napi_ok) throw Napi::Error::New(env);
+
 #else  // NAPI_CPP_EXCEPTIONS
 
 // When C++ exceptions are disabled, Errors are thrown as JavaScript exceptions,
@@ -108,6 +122,30 @@ static_assert(sizeof(char16_t) == sizeof(wchar_t),
   if ((status) != napi_ok) {                                                   \
     Napi::Error::New(env).ThrowAsJavaScriptException();                        \
     return;                                                                    \
+  }
+
+#define NAPI_CO_THROW(e, ...)                                                  \
+  do {                                                                         \
+    (e).ThrowAsJavaScriptException();                                          \
+    co_return __VA_ARGS__;                                                     \
+  } while (0)
+
+#define NAPI_CO_THROW_VOID(e)                                                  \
+  do {                                                                         \
+    (e).ThrowAsJavaScriptException();                                          \
+    co_return;                                                                 \
+  } while (0)
+
+#define NAPI_CO_THROW_IF_FAILED(env, status, ...)                              \
+  if ((status) != napi_ok) {                                                   \
+    Napi::Error::New(env).ThrowAsJavaScriptException();                        \
+    co_return __VA_ARGS__;                                                     \
+  }
+
+#define NAPI_CO_THROW_IF_FAILED_VOID(env, status)                              \
+  if ((status) != napi_ok) {                                                   \
+    Napi::Error::New(env).ThrowAsJavaScriptException();                        \
+    co_return;                                                                 \
   }
 
 #endif  // NAPI_CPP_EXCEPTIONS
@@ -481,6 +519,13 @@ class Value {
       const;  ///< Coerces a value to a JavaScript string.
   MaybeOrValue<Object> ToObject()
       const;  ///< Coerces a value to a JavaScript object.
+
+#if __cplusplus >= 202002L
+  class promise_type;
+  class Awaiter;
+
+  Awaiter operator co_await() const;
+#endif
 
  protected:
   /// !cond INTERNAL
@@ -3188,6 +3233,45 @@ class Addon : public InstanceWrap<T> {
   Object entry_point_;
 };
 #endif  // NAPI_VERSION > 5
+
+#if __cplusplus >= 202002L
+
+class Value::promise_type {
+ public:
+  promise_type(const CallbackInfo& info);
+
+  Value get_return_object() const;
+  std::suspend_never initial_suspend() const NAPI_NOEXCEPT;
+  std::suspend_never final_suspend() const NAPI_NOEXCEPT;
+  void unhandled_exception() const;
+  void return_value(napi_value value) const;
+
+  void Resolve(napi_value value) const;
+  void Reject(napi_value value) const;
+
+ private:
+  Napi::Env env_;
+  Promise::Deferred deferred_;
+};
+
+class Value::Awaiter {
+ public:
+  Awaiter(Value value);
+
+  bool await_ready();
+  void await_suspend(std::coroutine_handle<Value::promise_type> handle);
+  Value await_resume() const;
+
+ private:
+  bool enabled_exceptions_;
+  std::coroutine_handle<Value::promise_type> handle_;
+  std::variant<Value, Value, Value> state_;
+
+  static Value OnFulFill(const CallbackInfo&);
+  static Value OnReject(const CallbackInfo&);
+};
+
+#endif  // __cplusplus >= 202002L
 
 #ifdef NAPI_CPP_CUSTOM_NAMESPACE
 }  // namespace NAPI_CPP_CUSTOM_NAMESPACE

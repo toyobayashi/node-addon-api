@@ -6598,6 +6598,145 @@ bool Env::CleanupHook<Hook, Arg>::IsEmpty() const {
 }
 #endif  // NAPI_VERSION > 2
 
+#if __cplusplus >= 202002L
+
+inline Value::promise_type::promise_type(const CallbackInfo& info)
+    : env_(info.Env()), deferred_(Promise::Deferred::New(info.Env())) {}
+
+inline Value Value::promise_type::get_return_object() const {
+  return deferred_.Promise();
+}
+
+inline std::suspend_never Value::promise_type::initial_suspend() const
+    NAPI_NOEXCEPT {
+  return {};
+}
+inline std::suspend_never Value::promise_type::final_suspend() const
+    NAPI_NOEXCEPT {
+  return {};
+}
+
+inline void Value::promise_type::unhandled_exception() const {
+  std::exception_ptr exception = std::current_exception();
+#ifdef NAPI_CPP_EXCEPTIONS
+  try {
+    std::rethrow_exception(exception);
+  } catch (const Error& e) {
+    deferred_.Reject(e.Value());
+  } catch (const std::exception& e) {
+    deferred_.Reject(Error::New(env_, e.what()).Value());
+  } catch (const Value& e) {
+    deferred_.Reject(e);
+  } catch (const std::string& e) {
+    deferred_.Reject(Error::New(env_, e).Value());
+  } catch (const char* e) {
+    deferred_.Reject(Error::New(env_, e).Value());
+  } catch (...) {
+    deferred_.Reject(Error::New(env_, "Unknown Error").Value());
+  }
+#else
+  std::rethrow_exception(exception);
+#endif
+}
+
+inline void Value::promise_type::return_value(napi_value value) const {
+  if (env_.IsExceptionPending()) {
+    Reject(env_.GetAndClearPendingException().Value());
+  } else {
+    Resolve(value);
+  }
+}
+
+inline void Value::promise_type::Resolve(napi_value value) const {
+  deferred_.Resolve(value);
+}
+
+inline void Value::promise_type::Reject(napi_value value) const {
+  deferred_.Reject(value);
+}
+
+inline Value::Awaiter::Awaiter(Value value)
+#ifdef NAPI_CPP_EXCEPTIONS
+    : enabled_exceptions_(true),
+#else
+    : enabled_exceptions_(false),
+#endif
+      handle_(),
+      state_(std::in_place_index<0>, value) {
+}
+
+inline bool Value::Awaiter::await_ready() {
+  const Value* value = std::get_if<0>(&state_);
+  if (value->IsPromise()) {
+    return false;
+  }
+  if (value->IsObject()) {
+    MaybeOrValue<Value> then = value->As<Object>().Get("then");
+#ifdef NODE_ADDON_API_ENABLE_MAYBE
+    if (then.UnwrapOr(Value()).IsFunction()) {
+#else
+    if (then.IsFunction()) {
+#endif
+      return false;
+    }
+  }
+  state_.emplace<1>(*value);
+  return true;
+}
+
+inline void Value::Awaiter::await_suspend(
+    std::coroutine_handle<promise_type> handle) {
+  handle_ = handle;
+  Object thenable = std::get_if<0>(&state_)->As<Object>();
+  Napi::Env env = thenable.Env();
+  Function then = thenable
+                      .Get("then")
+#ifdef NODE_ADDON_API_ENABLE_MAYBE
+                      .Unwrap()
+#endif
+                      .As<Function>();
+
+  then.Call(thenable,
+            {Function::New(env, OnFulFill, nullptr, this),
+             Function::New(env, OnReject, nullptr, this)});
+}
+
+inline Value Value::Awaiter::await_resume() const {
+  const Value* ok = std::get_if<1>(&state_);
+  if (ok) {
+    return *ok;
+  }
+  const Value* err = std::get_if<2>(&state_);
+  NAPI_THROW(Error(err->Env(), *err), Value());
+}
+
+inline Value Value::Awaiter::OnFulFill(const CallbackInfo& info) {
+  Value::Awaiter* awaiter = static_cast<Value::Awaiter*>(info.Data());
+  Napi::Env env = info.Env();
+  awaiter->state_.emplace<1>(info[0]);
+  awaiter->handle_.resume();
+  return env.Undefined();
+}
+
+inline Value Value::Awaiter::OnReject(const CallbackInfo& info) {
+  Value::Awaiter* awaiter = static_cast<Value::Awaiter*>(info.Data());
+  Napi::Env env = info.Env();
+  awaiter->state_.emplace<2>(info[0]);
+  if (awaiter->enabled_exceptions_) {
+    awaiter->handle_.resume();
+  } else {
+    awaiter->handle_.promise().Reject(info[0]);
+    awaiter->handle_.destroy();
+  }
+  return env.Undefined();
+}
+
+inline Value::Awaiter Value::operator co_await() const {
+  return {*this};
+}
+
+#endif  // __cplusplus >= 202002L
+
 #ifdef NAPI_CPP_CUSTOM_NAMESPACE
 }  // namespace NAPI_CPP_CUSTOM_NAMESPACE
 #endif

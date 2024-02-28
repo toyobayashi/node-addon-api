@@ -47,7 +47,11 @@ jobs:
           export CC="gcc" CXX="g++"
         fi
         if [ "${{ matrix.compiler }}" = "clang" ]; then
-          export CC="clang" CXX="clang++"
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            export CC="clang-15" CXX="clang++-15"
+          else
+            export CC="$(brew --prefix llvm@15)/bin/clang" CXX="$(brew --prefix llvm@15)/bin/clang++"
+          fi
         fi
         echo "CC=\"$CC\" CXX=\"$CXX\""
         echo "$CC --version"

@@ -87,6 +87,9 @@
       'build_sources_type_check': [
         'value_type_cast.cc'
       ],
+      'build_sources_coroutine': [
+        'coroutine.cc'
+      ],
       'conditions': [
         ['disable_deprecated!="true"', {
           'build_sources': ['object/object_deprecated.cc']
@@ -133,6 +136,31 @@
       'dependencies': ['../node_addon_api.gyp:node_addon_api'],
       'sources': ['>@(build_sources)'],
       'defines': ['NAPI_CPP_CUSTOM_NAMESPACE=cstm']
+    },
+    {
+      'target_name': 'binding_cpp20',
+      'dependencies': ['../node_addon_api.gyp:node_addon_api_except'],
+      'sources': ['>@(build_sources_coroutine)'],
+      'includes': ['../cpp20.gypi'],
+    },
+    {
+      'target_name': 'binding_cpp20_noexcept',
+      'dependencies': ['../node_addon_api.gyp:node_addon_api'],
+      'sources': ['>@(build_sources_coroutine)'],
+      'includes': ['../cpp20.gypi'],
+    },
+    {
+      'target_name': 'binding_cpp20_noexcept_maybe',
+      'dependencies': ['../node_addon_api.gyp:node_addon_api_maybe'],
+      'sources': ['>@(build_sources_coroutine)'],
+      'includes': ['../cpp20.gypi'],
+    },
+    {
+      'target_name': 'binding_cpp20_custom_namespace',
+      'dependencies': ['../node_addon_api.gyp:node_addon_api'],
+      'sources': ['>@(build_sources_coroutine)'],
+      'defines': ['NAPI_CPP_CUSTOM_NAMESPACE=cstm'],
+      'includes': ['../cpp20.gypi'],
     },
   ],
 }
