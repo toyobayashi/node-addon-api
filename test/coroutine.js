@@ -58,4 +58,7 @@ async function test (path) {
   } catch (err) {
     assert.strictEqual(err.message, 'test error');
   }
+
+  const lastError = await binding.otherTypeCoroutine();
+  assert.strictEqual(lastError, 'task error');
 }

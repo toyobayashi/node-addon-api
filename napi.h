@@ -522,6 +522,7 @@ class Value {
 
 #if __cplusplus >= 202002L
   class promise_type;
+  class AwaiterBase;
   class Awaiter;
 
   Awaiter operator co_await() const;
@@ -3260,21 +3261,30 @@ class Value::promise_type {
   Promise::Deferred deferred_;
 };
 
-class Value::Awaiter {
+class Value::AwaiterBase {
+ public:
+  AwaiterBase(Value value);
+
+  bool await_ready() const NAPI_NOEXCEPT;
+  void await_suspend(std::coroutine_handle<> handle);
+
+ protected:
+  bool enabled_exceptions_;
+  std::coroutine_handle<> handle_;
+  std::variant<Value, Value, Value> state_;
+
+  virtual void Fulfill(Value value);
+  virtual void Reject(Value reason);
+
+  static Value OnFulfill(const CallbackInfo&);
+  static Value OnReject(const CallbackInfo&);
+};
+
+class Value::Awaiter : public Value::AwaiterBase {
  public:
   Awaiter(Value value);
 
-  bool await_ready() const NAPI_NOEXCEPT;
-  void await_suspend(std::coroutine_handle<Value::promise_type> handle);
   Value await_resume() const;
-
- private:
-  bool enabled_exceptions_;
-  std::coroutine_handle<Value::promise_type> handle_;
-  std::variant<Value, Value, Value> state_;
-
-  static Value OnFulFill(const CallbackInfo&);
-  static Value OnReject(const CallbackInfo&);
 };
 
 #endif  // __cplusplus >= 202002L

@@ -6666,7 +6666,7 @@ inline void Value::promise_type::Reject(napi_value value) const {
   deferred_.Reject(value);
 }
 
-inline Value::Awaiter::Awaiter(Value value)
+inline Value::AwaiterBase::AwaiterBase(Value value)
 #ifdef NAPI_CPP_EXCEPTIONS
     : enabled_exceptions_(true),
 #else
@@ -6676,12 +6676,11 @@ inline Value::Awaiter::Awaiter(Value value)
       state_(std::in_place_index<0>, value) {
 }
 
-inline bool Value::Awaiter::await_ready() const NAPI_NOEXCEPT {
+inline bool Value::AwaiterBase::await_ready() const NAPI_NOEXCEPT {
   return false;
 }
 
-inline void Value::Awaiter::await_suspend(
-    std::coroutine_handle<promise_type> handle) {
+inline void Value::AwaiterBase::await_suspend(std::coroutine_handle<> handle) {
   handle_ = handle;
   const Value* value = std::get_if<0>(&state_);
   Napi::Env env = value->Env();
@@ -6723,9 +6722,11 @@ inline void Value::Awaiter::await_suspend(
 #endif
 
   then.Call(promise,
-            {Function::New(env, OnFulFill, nullptr, this),
+            {Function::New(env, OnFulfill, nullptr, this),
              Function::New(env, OnReject, nullptr, this)});
 }
+
+inline Value::Awaiter::Awaiter(Value value) : AwaiterBase(value) {}
 
 inline Value Value::Awaiter::await_resume() const {
   const Value* ok = std::get_if<1>(&state_);
@@ -6736,24 +6737,36 @@ inline Value Value::Awaiter::await_resume() const {
   NAPI_THROW(Error(err->Env(), *err), Value());
 }
 
-inline Value Value::Awaiter::OnFulFill(const CallbackInfo& info) {
+inline void Value::AwaiterBase::Fulfill(Value value) {
+  handle_.resume();
+}
+
+inline void Value::AwaiterBase::Reject(Value reason) {
+  if (enabled_exceptions_) {
+    handle_.resume();
+  } else {
+    std::coroutine_handle<promise_type>::from_address(handle_.address())
+        .promise()
+        .Reject(reason);
+    handle_.destroy();
+  }
+}
+
+inline Value Value::AwaiterBase::OnFulfill(const CallbackInfo& info) {
   Value::Awaiter* awaiter = static_cast<Value::Awaiter*>(info.Data());
   Napi::Env env = info.Env();
-  awaiter->state_.emplace<1>(info[0]);
-  awaiter->handle_.resume();
+  Value value = info[0];
+  awaiter->state_.emplace<1>(value);
+  awaiter->Fulfill(value);
   return env.Undefined();
 }
 
-inline Value Value::Awaiter::OnReject(const CallbackInfo& info) {
+inline Value Value::AwaiterBase::OnReject(const CallbackInfo& info) {
   Value::Awaiter* awaiter = static_cast<Value::Awaiter*>(info.Data());
   Napi::Env env = info.Env();
-  awaiter->state_.emplace<2>(info[0]);
-  if (awaiter->enabled_exceptions_) {
-    awaiter->handle_.resume();
-  } else {
-    awaiter->handle_.promise().Reject(info[0]);
-    awaiter->handle_.destroy();
-  }
+  Value reason = info[0];
+  awaiter->state_.emplace<2>(reason);
+  awaiter->Reject(reason);
   return env.Undefined();
 }
 
