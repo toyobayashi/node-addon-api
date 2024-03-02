@@ -6604,11 +6604,11 @@ bool Env::CleanupHook<Hook, Arg>::IsEmpty() const {
 //     : env_(env), deferred_(Promise::Deferred::New(env)) {}
 
 template <typename... Args>
-inline Value::promise_type::promise_type(napi_env env, Args&&... args)
+inline Value::promise_type::promise_type(napi_env env, Args&&...)
     : env_(env), deferred_(Promise::Deferred::New(env)) {}
 
 template <typename... Args>
-inline Value::promise_type::promise_type(Value value, Args&&... args)
+inline Value::promise_type::promise_type(Value value, Args&&...)
     : Value::promise_type::promise_type(value.Env()) {}
 
 inline Value::promise_type::promise_type(const CallbackInfo& info)

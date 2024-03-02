@@ -3239,10 +3239,10 @@ class Addon : public InstanceWrap<T> {
 class Value::promise_type {
  public:
   template <typename... Args>
-  promise_type(napi_env env, Args&&... args);
+  promise_type(napi_env env, Args&&...);
 
   template <typename... Args>
-  promise_type(Value value, Args&&... args);
+  promise_type(Value value, Args&&...);
 
   promise_type(const CallbackInfo& info);
 
