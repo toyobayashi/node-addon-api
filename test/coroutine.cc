@@ -100,7 +100,6 @@ struct Task {
       if (ok) return std::tuple<Value, Value>{*ok, Value()};
       const Value* err = std::get_if<2>(&state_);
       return std::tuple<Value, Value>{Value(), *err};
-      ;
     }
   };
 
@@ -114,7 +113,7 @@ struct Task {
 Task CreateTask(napi_env env) {
   Promise::Deferred deferred = Promise::Deferred::New(env);
   deferred.Reject(Napi::String::New(env, "task error"));
-  auto [ok, err] = co_await deferred.Promise();
+  co_await deferred.Promise();
 }
 
 Value OtherTypeCoroutine(const CallbackInfo& info) {

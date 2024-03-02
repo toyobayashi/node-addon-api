@@ -6737,7 +6737,7 @@ inline Value Value::Awaiter::await_resume() const {
   NAPI_THROW(Error(err->Env(), *err), Value());
 }
 
-inline void Value::AwaiterBase::Fulfill(Value value) {
+inline void Value::AwaiterBase::Fulfill(Value) {
   handle_.resume();
 }
 
