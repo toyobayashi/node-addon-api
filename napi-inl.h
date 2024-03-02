@@ -6600,8 +6600,19 @@ bool Env::CleanupHook<Hook, Arg>::IsEmpty() const {
 
 #if __cplusplus >= 202002L
 
+// inline Value::promise_type::promise_type(napi_env env)
+//     : env_(env), deferred_(Promise::Deferred::New(env)) {}
+
+template <typename... Args>
+inline Value::promise_type::promise_type(napi_env env, Args&&... args)
+    : env_(env), deferred_(Promise::Deferred::New(env)) {}
+
+template <typename... Args>
+inline Value::promise_type::promise_type(Value value, Args&&... args)
+    : Value::promise_type::promise_type(value.Env()) {}
+
 inline Value::promise_type::promise_type(const CallbackInfo& info)
-    : env_(info.Env()), deferred_(Promise::Deferred::New(info.Env())) {}
+    : Value::promise_type::promise_type(info.Env()) {}
 
 inline Value Value::promise_type::get_return_object() const {
   return deferred_.Promise();
@@ -6665,38 +6676,53 @@ inline Value::Awaiter::Awaiter(Value value)
       state_(std::in_place_index<0>, value) {
 }
 
-inline bool Value::Awaiter::await_ready() {
-  const Value* value = std::get_if<0>(&state_);
-  if (value->IsPromise()) {
-    return false;
-  }
-  if (value->IsObject()) {
-    MaybeOrValue<Value> then = value->As<Object>().Get("then");
-#ifdef NODE_ADDON_API_ENABLE_MAYBE
-    if (then.UnwrapOr(Value()).IsFunction()) {
-#else
-    if (then.IsFunction()) {
-#endif
-      return false;
-    }
-  }
-  state_.emplace<1>(*value);
-  return true;
+inline bool Value::Awaiter::await_ready() const NAPI_NOEXCEPT {
+  return false;
 }
 
 inline void Value::Awaiter::await_suspend(
     std::coroutine_handle<promise_type> handle) {
   handle_ = handle;
-  Object thenable = std::get_if<0>(&state_)->As<Object>();
-  Napi::Env env = thenable.Env();
-  Function then = thenable
-                      .Get("then")
+  const Value* value = std::get_if<0>(&state_);
+  Napi::Env env = value->Env();
+  Value promise;
+  if (value->IsPromise()) {
+    promise = value->As<Promise>();
 #ifdef NODE_ADDON_API_ENABLE_MAYBE
-                      .Unwrap()
+  } else if (value->IsObject() &&
+             value->As<Object>().Get("then").UnwrapOr(Value()).IsFunction()) {
+    Promise::Deferred deferred = Promise::Deferred::New(env);
+    Function then = value->As<Object>().Get("then").Unwrap().As<Function>();
+#else
+  } else if (value->IsObject() &&
+             value->As<Object>().Get("then").IsFunction()) {
+    Promise::Deferred deferred = Promise::Deferred::New(env);
+    Function then = value->As<Object>().Get("then").As<Function>();
 #endif
-                      .As<Function>();
+    promise = deferred.Promise();
+    then.Call(
+        *value,
+        {Function::New(env,
+                       [deferred](const CallbackInfo& info) -> Value {
+                         deferred.Resolve(info[0]);
+                         return info.Env().Undefined();
+                       }),
+         Function::New(env, [deferred](const CallbackInfo& info) -> Value {
+           deferred.Reject(info[0]);
+           return info.Env().Undefined();
+         })});
+  } else {
+    Promise::Deferred deferred = Promise::Deferred::New(env);
+    deferred.Resolve(*value);
+    promise = deferred.Promise();
+  }
+#ifdef NODE_ADDON_API_ENABLE_MAYBE
+  Function then = promise.As<Promise>().Get("then").Unwrap().As<Function>();
+#else
+  Function then = promise.As<Promise>().Get("then").As<Function>();
+#endif
 
-  then.Call(thenable,
+  then.Call(promise,
             {Function::New(env, OnFulFill, nullptr, this),
              Function::New(env, OnReject, nullptr, this)});
 }

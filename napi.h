@@ -3238,6 +3238,12 @@ class Addon : public InstanceWrap<T> {
 
 class Value::promise_type {
  public:
+  template <typename... Args>
+  promise_type(napi_env env, Args&&... args);
+
+  template <typename... Args>
+  promise_type(Value value, Args&&... args);
+
   promise_type(const CallbackInfo& info);
 
   Value get_return_object() const;
@@ -3258,7 +3264,7 @@ class Value::Awaiter {
  public:
   Awaiter(Value value);
 
-  bool await_ready();
+  bool await_ready() const NAPI_NOEXCEPT;
   void await_suspend(std::coroutine_handle<Value::promise_type> handle);
   Value await_resume() const;
 

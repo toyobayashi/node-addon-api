@@ -36,9 +36,31 @@ Value CoroutineThrow(const CallbackInfo& info) {
   co_return Value();
 }
 
+Value TestOrderInner(Array array) {
+  Napi::Env env = array.Env();
+  ObjectReference array_ref = ObjectReference::New(array, 1);
+  array_ref.Set(array_ref.Value().As<Array>().Length(),
+                Napi::Number::New(env, 1));
+  co_await Napi::Number::New(env, 1);
+  array_ref.Set(array_ref.Value().As<Array>().Length(),
+                Napi::Number::New(env, 2));
+  co_return env.Undefined();
+}
+
+Value TestOrder(const CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  Array array = Array::New(env);
+  Value promise = TestOrderInner(array);
+  array.Set(array.Length(), Napi::Number::New(env, 3));
+  ObjectReference array_ref = ObjectReference::New(array, 1);
+  co_await promise;
+  co_return array_ref.Value();
+}
+
 Object Init(Env env, Object exports) {
   exports.Set("coroutine", Function::New(env, Coroutine));
   exports.Set("coroutineThrow", Function::New(env, CoroutineThrow));
+  exports.Set("testOrder", Function::New(env, TestOrder));
   return exports;
 }
 

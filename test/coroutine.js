@@ -20,11 +20,15 @@ module.exports = runTestWithBindingPath(test, undefined, __dirname);
 
 async function test (path) {
   const binding = require(path);
+
+  const array = await binding.testOrder();
+  assert.deepStrictEqual(array, [1, 3, 2]);
+
   const promise = binding.coroutine(function () {
     return new Promise((resolve, reject) => {
       setTimeout(() => {
         resolve(42);
-      }, 1000);
+      }, 500);
     });
   });
   assert.ok(promise instanceof Promise);
@@ -35,7 +39,7 @@ async function test (path) {
       return new Promise((resolve, reject) => {
         setTimeout(() => {
           reject(new Error('42'));
-        }, 1000);
+        }, 500);
       });
     });
     throw new Error('should throw');
@@ -48,7 +52,7 @@ async function test (path) {
       return new Promise((resolve, reject) => {
         setTimeout(() => {
           resolve(42);
-        }, 1000);
+        }, 500);
       });
     });
   } catch (err) {
